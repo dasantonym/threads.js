@@ -11,12 +11,13 @@
     "templateStrings": true
   },
   "globals" : {
-    "setTimeout" : true
+    "setTimeout" : true,
+    "console": true
   },
   "rules" : {
     "global-strict"   : 0,
     "key-spacing"     : [0, { "beforeColon": false, "afterColon": true }],
-    "no-console"      : 1,
+    "no-console"      : 0,
     "no-multi-spaces" : 0,
     "quotes"          : [1, "single", "avoid-escape"]
   }

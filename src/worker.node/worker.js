@@ -9,11 +9,26 @@ export default class Worker extends EventEmitter {
   constructor(initialRunnable, options = {}) {
     super();
 
-    this.slave = child.fork(path.join(__dirname, 'slave.js'), [], options);
+    let es = require('event-stream'),
+        msgpack = require('msgpack');
+    options.stdio = ['ipc', 'pipe', 'pipe', 'pipe'];
+
+    this.dataResponse = null;
+
+    this.slave = child.spawn(process.argv[0], [path.join(__dirname, 'slave.js')], options);
     this.slave.on('message', this.handleMessage.bind(this));
     this.slave.on('error', this.handleError.bind(this));
     this.slave.on('exit', this.emit.bind(this, 'exit'));
 
+    this.so = this.slave.stdout.pipe(es.split());
+    this.so.on('data', (data) => {
+      console.log('Child stdout:' + data);
+    });
+    this.dataPipe = this.slave.stdio[3];
+    this.dataPipe.on('data', (data) => {
+      console.log(data);
+      this.dataResponse = msgpack.unpack(data);
+    });
     if (initialRunnable) {
       this.run(initialRunnable);
     }
@@ -47,7 +62,14 @@ export default class Worker extends EventEmitter {
     });
   }
 
-  send(param) {
+  send(...args) {
+    if (args.length > 1) {
+      let data = args.pop();
+      if (data.constructor && data.constructor.name === 'Float64Array') {
+        this.dataPipe.write(new Buffer(data.buffer));
+      }
+    }
+    let param = args[0] || {};
     this.slave.send({
       doRun : true,
       param
@@ -77,8 +99,9 @@ export default class Worker extends EventEmitter {
     } else if (message.progress) {
       this.handleProgress(message.progress);
     } else {
-      this.emit('message', ...message.response);
-      this.emit('done', ...message.response);    // this one is just for convenience
+      console.log(this.dataResponse);
+      this.emit('message', {data: this.dataResponse, args: [...message.response]});
+      this.emit('done', {data: this.dataResponse, args: [...message.response]});    // this one is just for convenience
     }
   }
 

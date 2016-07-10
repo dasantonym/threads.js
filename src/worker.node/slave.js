@@ -1,6 +1,8 @@
 // not using ES6 import/export syntax, since we need to require() in a handler
 // what the ES6 syntax does not permit
 const vm = require('vm');
+//const fs = require('fs');
+//const es = require('event-stream');
 
 let errorCatcherInPlace = false;
 let messageHandler = function() {
@@ -38,18 +40,34 @@ function runAsSandboxedModule(code) {
 
 
 function messageHandlerDone(...args) {
-  process.send({ response: args });
+  //console.log('slave send!!!!');
+  process.send({response: args});
 }
 
 messageHandlerDone.transfer = function(...args) {
-  args.pop();         // ignore last parameter, since it's only useful for browser code
-  messageHandlerDone(...args);
+  //console.log('slave transfer!!!!');
+  if (args[-1] instanceof Buffer) {
+    //var buffer = args.pop();
+    process.send({response: args});
+    //pipe.write(buffer);
+  } else {
+    messageHandlerDone(...args);
+  }
 };
 
 function messageHandlerProgress(progress) {
   process.send({ progress });
 }
 
+//let reader = fs.createReadStream('/dev/fd/4', {encoding: 'utf8'});
+
+
+/*
+let p4 = process.stdio[4].pipe(es.split());
+p4.on('data', (data) => {
+  console.log('stdio4: ' + data);
+});
+*/
 
 process.on('message', function(data) {
   if (data.initByScript) {
@@ -68,3 +86,4 @@ process.on('message', function(data) {
     messageHandler(data.param, messageHandlerDone, messageHandlerProgress);
   }
 });
+

@@ -1,6 +1,8 @@
 import child        from 'child_process';
 import path         from 'path';
 import EventEmitter from 'eventemitter3';
+import EventStream  from 'event-stream';
+import msgpack      from 'msgpack';
 
 import { getConfig } from '../config';
 
@@ -15,8 +17,6 @@ export default class Worker extends EventEmitter {
   constructor(initialRunnable, options = {}) {
     super();
 
-    let es = require('event-stream'),
-        msgpack = require('msgpack');
     options.stdio = ['ipc', 'pipe', 'pipe', 'pipe'];
 
     this.dataResponse = null;
@@ -27,13 +27,12 @@ export default class Worker extends EventEmitter {
     this.slave.on('error', this.handleError.bind(this));
     this.slave.on('exit', this.emit.bind(this, 'exit'));
 
-    this.so = this.slave.stdout.pipe(es.split());
+    this.so = this.slave.stdout.pipe(EventStream.split());
     this.so.on('data', (data) => {
-      console.log('Child stdout:' + data);
+      console.log('PID #' + this.slave.pid + ': ' + data);       // eslint-disable-line no-console
     });
     this.dataPipe = this.slave.stdio[3];
     this.dataPipe.on('data', (data) => {
-      console.log(data);
       this.dataResponse = msgpack.unpack(data);
     });
     if (initialRunnable) {
@@ -72,6 +71,7 @@ export default class Worker extends EventEmitter {
   send(...args) {
     if (args.length > 1) {
       let data = args.pop();
+      // TODO: support more than just float64
       if (data.constructor && data.constructor.name === 'Float64Array') {
         this.dataPipe.write(new Buffer(data.buffer));
       }
@@ -128,7 +128,6 @@ export default class Worker extends EventEmitter {
     } else if (message.progress) {
       this.handleProgress(message.progress);
     } else {
-      console.log(this.dataResponse);
       this.emit('message', {data: this.dataResponse, args: [...message.response]});
       this.emit('done', {data: this.dataResponse, args: [...message.response]});    // this one is just for convenience
     }

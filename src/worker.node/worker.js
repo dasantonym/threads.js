@@ -2,7 +2,7 @@ import child        from 'child_process';
 import path         from 'path';
 import EventEmitter from 'eventemitter3';
 import EventStream  from 'event-stream';
-import msgpack      from 'msgpack';
+//import msgpack      from 'msgpack';
 
 import { getConfig } from '../config';
 
@@ -19,7 +19,6 @@ export default class Worker extends EventEmitter {
 
     options.stdio = ['ipc', 'pipe', 'pipe', 'pipe'];
 
-    this.dataResponse = null;
     this.fixDebuggerPort(options, () => {
       this.slave = child.spawn(process.argv[0], [path.join(__dirname, 'slave.js')], options);
     });
@@ -32,8 +31,11 @@ export default class Worker extends EventEmitter {
       console.log('PID #' + this.slave.pid + ': ' + data);       // eslint-disable-line no-console
     });
     this.dataPipe = this.slave.stdio[3];
+    this.dataBuffers = [];
     this.dataPipe.on('data', (data) => {
-      this.dataResponse = msgpack.unpack(data);
+      if (data instanceof Buffer) {
+        this.dataBuffers.push(data);
+      }
     });
     if (initialRunnable) {
       this.run(initialRunnable);
@@ -69,13 +71,6 @@ export default class Worker extends EventEmitter {
   }
 
   send(...args) {
-    if (args.length > 1) {
-      let data = args.pop();
-      // TODO: support more than just float64
-      if (data.constructor && data.constructor.name === 'Float64Array') {
-        this.dataPipe.write(new Buffer(data.buffer));
-      }
-    }
     let param = args[0] || {};
     this.slave.send({
       doRun : true,
@@ -128,8 +123,14 @@ export default class Worker extends EventEmitter {
     } else if (message.progress) {
       this.handleProgress(message.progress);
     } else {
-      this.emit('message', {data: this.dataResponse, args: [...message.response]});
-      this.emit('done', {data: this.dataResponse, args: [...message.response]});    // this one is just for convenience
+      let resultBuffer;
+      if (this.dataBuffers.length > 0) {
+        resultBuffer = Buffer.concat(this.dataBuffers);
+        this.dataBuffers = [];
+      }
+      this.message = message;
+      this.emit('message', {data: resultBuffer, args: [...this.message.response]});
+      this.emit('done', {data: resultBuffer, args: [...this.message.response]});    // this one is just for convenience
     }
   }
 
